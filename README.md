@@ -9,5 +9,5 @@ python -m src.mlx_llama3_1.examples.llama3_1_generate_prompt
 
 # or 
 
-rye run python -m src.mlx_llama3_1.examples.llama3_1_generate_prompt
+rye run python -m src.mlx_llama3_1.examples.llama3_1_text_generation
 ```
