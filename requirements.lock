@@ -14,9 +14,15 @@ certifi==2024.7.4
     # via requests
 charset-normalizer==3.3.2
     # via requests
+contourpy==1.2.1
+    # via matplotlib
+cycler==0.12.1
+    # via matplotlib
 filelock==3.15.4
     # via huggingface-hub
     # via transformers
+fonttools==4.53.1
+    # via matplotlib
 fsspec==2024.6.1
     # via huggingface-hub
 huggingface-hub==0.24.5
@@ -26,21 +32,40 @@ idna==3.7
     # via requests
 jinja2==3.1.4
     # via mlx-lm
+kiwisolver==1.4.5
+    # via matplotlib
+markdown-it-py==3.0.0
+    # via rich
 markupsafe==2.1.5
     # via jinja2
+matplotlib==3.9.2
+    # via mlx-llama3-1
+mdurl==0.1.2
+    # via markdown-it-py
 mlx==0.16.3
     # via mlx-lm
 mlx-lm==0.16.1
     # via mlx-llama3-1
 numpy==2.0.1
+    # via contourpy
+    # via matplotlib
     # via mlx-lm
     # via transformers
 packaging==24.1
     # via huggingface-hub
+    # via matplotlib
     # via transformers
+pillow==10.4.0
+    # via matplotlib
 protobuf==5.27.3
     # via mlx-lm
     # via transformers
+pygments==2.18.0
+    # via rich
+pyparsing==3.1.2
+    # via matplotlib
+python-dateutil==2.9.0.post0
+    # via matplotlib
 pyyaml==6.0.2
     # via huggingface-hub
     # via mlx-lm
@@ -50,10 +75,14 @@ regex==2024.7.24
 requests==2.32.3
     # via huggingface-hub
     # via transformers
+rich==13.7.1
+    # via mlx-llama3-1
 safetensors==0.4.4
     # via transformers
 sentencepiece==0.2.0
     # via transformers
+six==1.16.0
+    # via python-dateutil
 tokenizers==0.19.1
     # via transformers
 tqdm==4.66.5
