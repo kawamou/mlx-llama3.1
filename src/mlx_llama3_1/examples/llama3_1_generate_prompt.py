@@ -22,7 +22,7 @@ def main():
     inputs = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = cast(str, inputs)
 
-    res = generate(model, tokenizer, inputs, verbose=True)
+    res = generate(model, tokenizer, inputs, verbose=True, max_tokens=1000)
 
 
 if __name__ == "__main__":
