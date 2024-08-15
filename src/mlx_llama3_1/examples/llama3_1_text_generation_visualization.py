@@ -1,10 +1,8 @@
-from mlx_lm.utils import generate
-from typing import cast, Union, Literal
+from typing import cast, Literal, Optional, List
 from src.mlx_llama3_1.llama3_1 import load_llama3_1
-import itertools
 import matplotlib.pyplot as plt
 import numpy as np
-from mlx_lm.models.llama import LlamaModel, Model
+from mlx_lm.models.llama import Model
 from transformers import PreTrainedTokenizer
 
 from rich.console import Console
@@ -24,18 +22,6 @@ def system_prompt_template(content: str) -> dict:
 
 def user_prompt_template(content: str) -> dict:
     return {"role": "user", "content": content}
-
-
-import mlx.core as mx
-import mlx.nn as nn
-from mlx_lm.utils import generate
-from typing import List, Optional, Union
-import numpy as np
-from rich.console import Console
-from rich.padding import Padding, PaddingDimensions
-from rich.style import Style
-
-console = Console()
 
 
 def rich_print(txt: str, padding: PaddingDimensions = (1, 3), style: Optional[Style] = None, **kwargs):
