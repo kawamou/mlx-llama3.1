@@ -132,6 +132,11 @@ class MultiByteBuffer:
     def __init__(self):
         self._buffer: mx.array = mx.array([])
 
+    @staticmethod
+    def is_multibyte_token(token: str):
+        multi_byte_tokens = {"�", "", " "}
+        return set(token) <= multi_byte_tokens
+
     def append(self, value: float):
         self._buffer = mx.concatenate([self._buffer, mx.array([value])])
 
@@ -144,6 +149,9 @@ class MultiByteBuffer:
 
     def len(self):
         return len(self._buffer)
+
+    def is_empty(self) -> bool:
+        return self.len() == 0
 
 
 @with_spinner("Generating text...")
@@ -174,26 +182,24 @@ def generate_text_(
         state = mx.concatenate([state, next_token_id.reshape(1, 1)], axis=1)
 
         _v_entropy = -mx.sum(probs * mx.log(probs + epsilon), axis=-1)
-        _v_entropy = _v_entropy.item()
-        _v_probability = probs[next_token_id].item()
+        _v_entropy = cast(float, _v_entropy.item())
+        _v_probability = cast(float, probs[next_token_id].item())
 
         completion = state[0, inputs_seq_len:]
         _decoded = tokenizer.decode(completion.tolist())
         token = _decoded[len(_decoded_prev) :]
 
-        if set(token) <= {"�", "", " "}:
+        if MultiByteBuffer.is_multibyte_token(token):
             _multibyte_buffer_entropy.append(cast(float, _v_entropy))
             _multibyte_buffer_probability.append(cast(float, _v_probability))
 
         else:
-            if _multibyte_buffer_entropy.len() > 0:
+            if not _multibyte_buffer_entropy.is_empty():
                 _multibyte_buffer_entropy.append(cast(float, _v_entropy))
                 _v_entropy = _multibyte_buffer_entropy.mean()
-            if _multibyte_buffer_probability.len() > 0:
+            if not _multibyte_buffer_probability.is_empty():
                 _multibyte_buffer_probability.append(cast(float, _v_probability))
                 _v_probability = _multibyte_buffer_probability.mean()
-            _v_entropy = cast(float, _v_entropy)
-            _v_probability = cast(float, _v_probability)
             _decoded_prev = _decoded
             _multibyte_buffer_entropy.clear()
             _multibyte_buffer_probability.clear()
