@@ -30,6 +30,8 @@ huggingface-hub==0.24.5
     # via transformers
 idna==3.7
     # via requests
+isort==5.13.2
+    # via mlx-llama3-1
 jinja2==3.1.4
     # via mlx-lm
 kiwisolver==1.4.5

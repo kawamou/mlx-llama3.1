@@ -1,15 +1,17 @@
-from typing import cast, Literal, Optional, List
-from src.mlx_llama3_1.llama3_1 import load_llama3_1
+import time
+from functools import wraps
+from typing import List, Literal, Optional, cast
+
 import matplotlib.pyplot as plt
+import mlx.core as mx
 import numpy as np
 from mlx_lm.models.llama import Model
-from transformers import PreTrainedTokenizer
-
 from rich.console import Console
 from rich.padding import Padding, PaddingDimensions
 from rich.style import Style
+from transformers import PreTrainedTokenizer
 
-import mlx.core as mx
+from src.mlx_llama3_1.llama3_1 import load_llama3_1
 
 epsilon = 1e-5  # float16の場合にlog(0)を防ぐための微小値 TODO: 今回fp16だが別の重みの場合は要検討
 

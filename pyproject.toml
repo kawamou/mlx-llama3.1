@@ -9,6 +9,7 @@ dependencies = [
     "mlx-lm>=0.16.1",
     "rich>=13.7.1",
     "matplotlib>=3.9.2",
+    "isort>=5.13.2",
 ]
 readme = "README.md"
 requires-python = ">= 3.8"
