@@ -11,7 +11,7 @@ from rich.style import Style
 
 import mlx.core as mx
 
-epsilon = 1e-5  # float16の場合にlog(0)を防ぐための微小値
+epsilon = 1e-5  # float16の場合にlog(0)を防ぐための微小値 TODO: 今回fp16だが別の重みの場合は要検討
 
 console = Console()
 
@@ -35,6 +35,9 @@ def rich_print(txt: str, padding: PaddingDimensions = (1, 3), style: Optional[St
 
 
 def get_color(v: float, cmap=plt.get_cmap(), scale=1.0, min_=0.4, max_=0.8):
+    """print(_v, ":" ,token)で確認できるがEntropyは暗いほど良い（値が小さい）.
+    Probabilityは明るいほど確信度が高い（値が大きい）.
+    """
     v_scaled = np.clip(v / scale, min_, max_)
     c = cmap(v_scaled)
     c = np.array(c)[:3] * 255
@@ -53,6 +56,31 @@ def get_context_logits(logits: mx.array) -> mx.array:
 
 
 type VISUALIZATION_MODE = Literal["entropy", "probability"]
+
+
+class CompletionsResult:
+
+    def __init__(self):
+        self._perplexity = 0.0
+        self._logprobs = 0.0
+        self._entropies: List = []
+        self._probabilities = []
+        self._tokens = []
+
+    def set_perplexity(self, perplexity: float):
+        self._perplexity = perplexity
+
+    def append_entropy(self, entropy: float):
+        self._entropies.append(entropy)
+
+    def append_probability(self, probability: float):
+        self._probabilities.append(probability)
+
+    def append_token(self, token: str):
+        self._tokens.append(token)
+
+
+result = CompletionsResult()
 
 
 def generate_text_(
@@ -91,6 +119,7 @@ def generate_text_(
                 _v_context_list = cast(List[float], _v_context.tolist())
 
                 _decoded_prev = ""
+
                 token_buffer: List[str] = []
                 _multibyte_buffer = mx.array([])
                 for i_context, _v in enumerate(_v_context_list):
@@ -117,12 +146,12 @@ def generate_text_(
             _multibyte_buffer = mx.array([])
 
         probs = mx.softmax(get_next_token_logits(logits), axis=-1)
-        next_token_id = mx.argmax(probs)
+        next_token_id = mx.argmax(probs, axis=-1)
 
         state = mx.concatenate([state, next_token_id.reshape(1, 1)], axis=1)
 
         if metric == "entropy":
-            _v = -mx.sum(probs * mx.log(probs + epsilon))
+            _v = -mx.sum(probs * mx.log(probs + epsilon), axis=-1)
             _v = _v.item()
         elif metric == "probability":
             _v = probs[next_token_id].item()
@@ -180,8 +209,8 @@ def main():
     model, tokenizer = load_llama3_1()
 
     messages = [
-        system_prompt_template("あなたはフレンドリーなチャットボットです"),
-        user_prompt_template("亀はエラ呼吸できますか？"),
+        # system_prompt_template("あなたはフレンドリーなチャットボットです"),
+        user_prompt_template("ポケモンは全部で何匹いますか？"),
     ]
 
     inputs = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, max_length=1000)
