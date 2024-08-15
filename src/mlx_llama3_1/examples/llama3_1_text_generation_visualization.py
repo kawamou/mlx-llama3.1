@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.padding import Padding, PaddingDimensions
 from rich.style import Style
 from transformers import PreTrainedTokenizer
+from transformers.utils.generic import TensorType
 
 from src.mlx_llama3_1.llama3_1 import load_llama3_1
 
@@ -77,14 +78,11 @@ def get_context_logits(logits: mx.array) -> mx.array:
     return logits[0, :-1, :]
 
 
-type VISUALIZATION_MODE = Literal["entropy", "probability"]
-
-
 class CompletionsResult:
 
     def __init__(self):
         self._perplexity = 0.0
-        self._logprobs = 0.0
+        self._total_logprobs = 0.0
         self._entropies: List[float] = []
         self._probabilities: List[float] = []
         self._tokens: List[str] = []
@@ -161,7 +159,7 @@ def generate_text_(
     prompt: str,
     max_tokens: int = 100,
 ):
-    input_ids = mx.array(tokenizer.encode(prompt, return_tensors="np"))
+    input_ids = mx.array(tokenizer.encode(prompt, return_tensors=TensorType("mlx")))
 
     input_ids_shape: tuple[int, int] = input_ids.shape
     _, inputs_seq_len = input_ids_shape
@@ -240,7 +238,7 @@ def main():
 
     messages = [
         # system_prompt_template("あなたはフレンドリーなチャットボットです"),
-        user_prompt_template("ポケモンは全部で何匹いますか？"),
+        user_prompt_template("ポケモンは全部で何匹いますか？答える前に真実かどうか深呼吸してからお答えください"),
     ]
 
     inputs = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, max_length=1000)
