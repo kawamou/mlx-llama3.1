@@ -18,6 +18,26 @@ epsilon = 1e-5  # float16の場合にlog(0)を防ぐための微小値 TODO: 今
 console = Console()
 
 
+def with_spinner(message="Processing..."):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            with console.status(message, spinner="dots") as status:
+                try:
+                    result = func(*args, **kwargs)
+                    status.update(status="Done!", spinner="monkey")
+                    time.sleep(0.5)  # 完了メッセージを少し表示
+                    return result
+                except Exception as e:
+                    status.update(status=f"Error: {str(e)}", spinner="skull")
+                    time.sleep(0.5)  # エラーメッセージを少し表示
+                    raise
+
+        return wrapper
+
+    return decorator
+
+
 def system_prompt_template(content: str) -> dict:
     return {"role": "system", "content": content}
 
@@ -108,6 +128,7 @@ class CompletionsResult:
 result = CompletionsResult()
 
 
+@with_spinner("Generating text...")
 def generate_text_(
     model: Model,
     tokenizer: PreTrainedTokenizer,
