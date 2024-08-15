@@ -48,7 +48,7 @@ def rich_print(txt: str, padding: PaddingDimensions = (1, 3), style: Optional[St
     )
 
 
-def get_color(v, cmap=plt.get_cmap(), scale=1.0, min_=0.4, max_=0.8):
+def get_color(v: float, cmap=plt.get_cmap(), scale=1.0, min_=0.4, max_=0.8):
     v_scaled = np.clip(v / scale, min_, max_)
     c = cmap(v_scaled)
     c = np.array(c)[:3] * 255
@@ -102,18 +102,19 @@ def generate_text_(
                     seq_len: int = cast(int, probs_context.shape[0])
                     _v_context = probs_context[mx.arange(0, seq_len, 1), state[0, 1:]]
 
-                _v_context_list = cast(list[float], _v_context.tolist())
+                _v_context_list = cast(List[float], _v_context.tolist())
 
                 _decoded_prev = ""
-                token_buffer, _multibyte_buffer = [], []
+                token_buffer: List[str] = []
+                _multibyte_buffer = mx.array([])
                 for i_context, _v in enumerate(_v_context_list):
                     _decoded = tokenizer.decode(state[0, 1 : 1 + (i_context + 1)].tolist())
                     token = _decoded[len(_decoded_prev) :]
                     if set(token) <= {"�", "", " "}:
-                        _multibyte_buffer.append(_v)
+                        _multibyte_buffer = mx.concatenate([_multibyte_buffer, mx.array([_v])])
                     else:
-                        if _multibyte_buffer:
-                            _v = np.mean(_multibyte_buffer + [_v])
+                        if len(_multibyte_buffer) > 0:
+                            _v = cast(float, mx.mean(mx.concatenate([_multibyte_buffer, mx.array([_v])])).item())
                         c = get_color(_v, scale=scale)
                         token_buffer.append(f"[{c}]{token}[/{c}]")
                         _decoded_prev = _decoded
@@ -126,7 +127,8 @@ def generate_text_(
             rich_print("", (1, 3, 0, 3))
 
             _decoded_prev = ""
-            token_buffer, _multibyte_buffer = [], []
+            token_buffer: List[str] = []
+            _multibyte_buffer = mx.array([])
 
         probs = mx.softmax(get_next_token_logits(logits), axis=-1)
         next_token_id = mx.argmax(probs)
@@ -134,7 +136,8 @@ def generate_text_(
         state = mx.concatenate([state, next_token_id.reshape(1, 1)], axis=1)
 
         if metric == "entropy":
-            _v = -mx.sum(probs * mx.log(probs + epsilon), axis=-1)
+            _v = -mx.sum(probs * mx.log(probs + epsilon))
+            _v = _v.item()
         elif metric == "probability":
             _v = probs[next_token_id].item()
 
@@ -143,23 +146,16 @@ def generate_text_(
         token = _decoded[len(_decoded_prev) :]
 
         if set(token) <= {"�", "", " "}:
-            if isinstance(_v, mx.array):
-                hoge = _v.tolist()
-                _multibyte_buffer.append(hoge)
-            else:
-                _multibyte_buffer.append(_v)
+            _multibyte_buffer = mx.concatenate([_multibyte_buffer, mx.array([_v])])
+
         else:
-            if _multibyte_buffer:
-                if isinstance(_v, mx.array):
-                    _v = np.mean(_multibyte_buffer + [_v.tolist()])  # type: ignore
-                elif isinstance(_v, (list, np.ndarray)):
-                    _v = np.mean(_multibyte_buffer + _v)
-                else:
-                    _v = np.mean(_multibyte_buffer + [_v])
+            if len(_multibyte_buffer) > 0:
+                _v = mx.mean(mx.concatenate([_multibyte_buffer, mx.array([_v])])).item()
+            _v = cast(float, _v)
             c = get_color(_v, scale=scale)
             token_buffer.append(f"[{c}]{token}[/{c}]")
             _decoded_prev = _decoded
-            _multibyte_buffer = []
+            _multibyte_buffer = mx.array([])
             if token.endswith("\n"):
                 rich_print("".join(token_buffer).strip(), (0, 3))
                 token_buffer = []
