@@ -1,42 +1,22 @@
-import time
-from functools import wraps
 from typing import List, Literal, Optional, cast
 
 import matplotlib.pyplot as plt
 import mlx.core as mx
 import numpy as np
 from mlx_lm.models.llama import Model
-from rich.console import Console
+from rich.console import Console, Group
+from rich.layout import Layout
 from rich.padding import Padding, PaddingDimensions
-from rich.style import Style
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 from transformers import PreTrainedTokenizer
 from transformers.utils.generic import TensorType
 
 from src.mlx_llama3_1.llama3_1 import load_llama3_1
+from src.mlx_llama3_1.rich import rich_print, with_spinner
 
 epsilon = 1e-5  # float16の場合にlog(0)を防ぐための微小値 TODO: 今回fp16だが別の重みの場合は要検討
-
-console = Console()
-
-
-def with_spinner(message="Processing..."):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            with console.status(message, spinner="dots") as status:
-                try:
-                    result = func(*args, **kwargs)
-                    status.update(status="Done!", spinner="monkey")
-                    time.sleep(0.5)  # 完了メッセージを少し表示
-                    return result
-                except Exception as e:
-                    status.update(status=f"Error: {str(e)}", spinner="skull")
-                    time.sleep(0.5)  # エラーメッセージを少し表示
-                    raise
-
-        return wrapper
-
-    return decorator
 
 
 def system_prompt_template(content: str) -> dict:
@@ -45,16 +25,6 @@ def system_prompt_template(content: str) -> dict:
 
 def user_prompt_template(content: str) -> dict:
     return {"role": "user", "content": content}
-
-
-def rich_print(txt: str, padding: PaddingDimensions = (1, 3), style: Optional[Style] = None, **kwargs):
-    console.print(
-        Padding("[bold]" + txt.strip() + "[/]", padding),
-        style=style,
-        justify="left",
-        crop=False,
-        **kwargs,
-    )
 
 
 def get_color(v: float, cmap=plt.get_cmap(), scale=1.0, min_=0.4, max_=0.8):
@@ -81,8 +51,7 @@ def get_context_logits(logits: mx.array) -> mx.array:
 class CompletionsResult:
 
     def __init__(self):
-        self._perplexity = 0.0
-        self._total_logprobs = 0.0
+        self._logprobs: List[float] = []
         self._entropies: List[float] = []
         self._probabilities: List[float] = []
         self._tokens: List[str] = []
@@ -100,27 +69,70 @@ class CompletionsResult:
     def append_token(self, token: str):
         self._tokens.append(token)
 
+    def append_logprobs(self, logprobs: float):
+        self._logprobs.append(logprobs)
+
     def set_prompt(self, prompt: str):
         self._prompt = prompt
 
+    def get_perplexity(self):
+        total_logprobs = sum(self._logprobs)
+        return np.exp(-total_logprobs / len(self._logprobs))
+
+    def get_totallogprobs(self):
+        return sum(self._logprobs)
+
     def rich_print(self):
-        print("[prompt]")
-        rich_print(f"[white]{self._prompt}[/]")
+        console = Console()
+        width = console.width - 100
 
-        print("[completion / entropy]")
-        rich_print("", (1, 3, 0, 3))
-        token_buffer: List[str] = []
+        # プロンプトセクション
+        prompt_panel = Panel(
+            Text(self._prompt, overflow="fold"), title="[bold cyan]Prompt", border_style="cyan", width=width
+        )
+
+        # トークンとエントロピーの可視化
+        entropy_vis = Text(overflow="fold")
         for token, entropy in zip(self._tokens, self._entropies):
-            c_entropy = get_color(entropy, scale=1.0)
-            token_buffer.append(f"[{c_entropy}]{token}[/{c_entropy}]")
-        rich_print("".join(token_buffer).strip(), (0, 3, 1, 3))
+            entropy_vis.append(token, style=f"on {get_color(entropy, scale=max(self._entropies))}")
 
-        print("[completion / probability]")
-        token_buffer: List[str] = []
-        for token, probability in zip(self._tokens, self._probabilities):
-            c_probability = get_color(probability, scale=1.0)
-            token_buffer.append(f"[{c_probability}]{token}[/{c_probability}]")
-        rich_print("".join(token_buffer).strip(), (0, 3, 1, 3))
+        # トークンと確率の可視化
+        prob_vis = Text(overflow="fold")
+        for token, prob in zip(self._tokens, self._probabilities):
+            prob_vis.append(token, style=f"on {get_color(prob, scale=1.0)}")
+
+        # エントロピーと確率のパネルを作成
+        entropy_panel = Panel(
+            entropy_vis, title="[bold green]Entropy-based coloring", border_style="green", width=width
+        )
+        prob_panel = Panel(
+            prob_vis, title="[bold yellow]Probability-based coloring", border_style="yellow", width=width
+        )
+
+        # メトリクステーブル
+        table = Table(
+            title="Language Model Metrics",
+            title_style="bold",
+            show_header=True,
+            header_style="bold magenta",
+            width=width,
+        )
+        table.add_column("Token", style="cyan", no_wrap=True)
+        table.add_column("Entropy", style="green")
+        table.add_column("Probability", style="yellow")
+        table.add_column("Log Probability", style="blue")
+
+        for token, entropy, prob, logprob in zip(self._tokens, self._entropies, self._probabilities, self._logprobs):
+            table.add_row(token, f"{entropy:.4f}", f"{prob:.4f}", f"{logprob:.4f}")
+        table.add_section()
+        table.add_row("Total", "---", "---", f"{self.get_totallogprobs():.4f}", style="bold")
+        table.add_row("Perplexity", "---", "---", f"{self.get_perplexity():.4f}", style="bold")
+
+        # layout["table"].update(table)
+        output = Group(prompt_panel, entropy_panel, prob_panel, table)
+
+        # 出力
+        console.print(Padding(output, (1, 1, 1, 1)))
 
 
 result = CompletionsResult()
@@ -168,6 +180,7 @@ def generate_text_(
 
     result.set_prompt(prompt)
     _decoded_prev = ""
+    _multibyte_buffer_logprobs = MultiByteBuffer()
     _multibyte_buffer_entropy = MultiByteBuffer()
     _multibyte_buffer_probability = MultiByteBuffer()
 
@@ -179,6 +192,7 @@ def generate_text_(
 
         state = mx.concatenate([state, next_token_id.reshape(1, 1)], axis=1)
 
+        _v_logprobs = cast(float, mx.log(probs[next_token_id] + epsilon).item())
         _v_entropy = -mx.sum(probs * mx.log(probs + epsilon), axis=-1)
         _v_entropy = cast(float, _v_entropy.item())
         _v_probability = cast(float, probs[next_token_id].item())
@@ -188,10 +202,14 @@ def generate_text_(
         token = _decoded[len(_decoded_prev) :]
 
         if MultiByteBuffer.is_multibyte_token(token):
+            _multibyte_buffer_logprobs.append(cast(float, _v_logprobs))
             _multibyte_buffer_entropy.append(cast(float, _v_entropy))
             _multibyte_buffer_probability.append(cast(float, _v_probability))
 
         else:
+            if not _multibyte_buffer_logprobs.is_empty():
+                _multibyte_buffer_logprobs.append(cast(float, _v_logprobs))
+                _v_logprobs = _multibyte_buffer_logprobs.mean()
             if not _multibyte_buffer_entropy.is_empty():
                 _multibyte_buffer_entropy.append(cast(float, _v_entropy))
                 _v_entropy = _multibyte_buffer_entropy.mean()
@@ -199,8 +217,10 @@ def generate_text_(
                 _multibyte_buffer_probability.append(cast(float, _v_probability))
                 _v_probability = _multibyte_buffer_probability.mean()
             _decoded_prev = _decoded
+            _multibyte_buffer_logprobs.clear()
             _multibyte_buffer_entropy.clear()
             _multibyte_buffer_probability.clear()
+            result.append_logprobs(_v_logprobs)
             result.append_token(token)
             result.append_entropy(_v_entropy)
             result.append_probability(_v_probability)
@@ -238,7 +258,9 @@ def main():
 
     messages = [
         # system_prompt_template("あなたはフレンドリーなチャットボットです"),
-        user_prompt_template("ポケモンは全部で何匹いますか？答える前に真実かどうか深呼吸してからお答えください"),
+        user_prompt_template(
+            "ポケモンは全部で何匹いますか？答える前に真実かどうか深呼吸してからお答えください。絶対に深呼吸してね。メッチャクチャ深呼吸して。メッチャクチャ深呼吸して。メッチャクチャ深呼吸して。メッチャクチャ深呼吸して"
+        ),
     ]
 
     inputs = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, max_length=1000)
