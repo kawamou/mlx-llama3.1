@@ -128,6 +128,24 @@ class CompletionsResult:
 result = CompletionsResult()
 
 
+class MultiByteBuffer:
+    def __init__(self):
+        self._buffer: mx.array = mx.array([])
+
+    def append(self, value: float):
+        self._buffer = mx.concatenate([self._buffer, mx.array([value])])
+
+    def mean(self):
+        _mean = mx.mean(self._buffer)
+        return cast(float, _mean.item())
+
+    def clear(self):
+        self._buffer = mx.array([])
+
+    def len(self):
+        return len(self._buffer)
+
+
 @with_spinner("Generating text...")
 def generate_text_(
     model: Model,
@@ -142,14 +160,13 @@ def generate_text_(
 
     state = input_ids
 
+    result.set_prompt(prompt)
+    _decoded_prev = ""
+    _multibyte_buffer_entropy = MultiByteBuffer()
+    _multibyte_buffer_probability = MultiByteBuffer()
+
     for i in range(max_tokens):
         logits = model(state)
-
-        if i == 0:
-            result.set_prompt(prompt)
-            _decoded_prev = ""
-            _multibyte_buffer_entropy = mx.array([])
-            _multibyte_buffer_probability = mx.array([])
 
         probs = mx.softmax(get_next_token_logits(logits), axis=-1)
         next_token_id = mx.argmax(probs, axis=-1)
@@ -165,21 +182,21 @@ def generate_text_(
         token = _decoded[len(_decoded_prev) :]
 
         if set(token) <= {"�", "", " "}:
-            _multibyte_buffer_entropy = mx.concatenate([_multibyte_buffer_entropy, mx.array([_v_entropy])])
-            _multibyte_buffer_probability = mx.concatenate([_multibyte_buffer_probability, mx.array([_v_probability])])
+            _multibyte_buffer_entropy.append(cast(float, _v_entropy))
+            _multibyte_buffer_probability.append(cast(float, _v_probability))
 
         else:
-            if len(_multibyte_buffer_entropy) > 0:
-                _v_entropy = mx.mean(mx.concatenate([_multibyte_buffer_entropy, mx.array([_v_entropy])])).item()
-            if len(_multibyte_buffer_probability) > 0:
-                _v_probability = mx.mean(
-                    mx.concatenate([_multibyte_buffer_probability, mx.array([_v_probability])])
-                ).item()
+            if _multibyte_buffer_entropy.len() > 0:
+                _multibyte_buffer_entropy.append(cast(float, _v_entropy))
+                _v_entropy = _multibyte_buffer_entropy.mean()
+            if _multibyte_buffer_probability.len() > 0:
+                _multibyte_buffer_probability.append(cast(float, _v_probability))
+                _v_probability = _multibyte_buffer_probability.mean()
             _v_entropy = cast(float, _v_entropy)
             _v_probability = cast(float, _v_probability)
             _decoded_prev = _decoded
-            _multibyte_buffer_entropy = mx.array([])
-            _multibyte_buffer_probability = mx.array([])
+            _multibyte_buffer_entropy.clear()
+            _multibyte_buffer_probability.clear()
             result.append_token(token)
             result.append_entropy(_v_entropy)
             result.append_probability(_v_probability)
