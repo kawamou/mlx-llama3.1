@@ -1,4 +1,5 @@
-from typing import List, Literal, Optional, cast
+from functools import lru_cache
+from typing import List, Literal, Optional, TypedDict, cast
 
 import matplotlib.pyplot as plt
 import mlx.core as mx
@@ -48,6 +49,28 @@ def get_context_logits(logits: mx.array) -> mx.array:
     return logits[0, :-1, :]
 
 
+# @lru_cache(maxsize=None)
+def calculate_loglikelihood(model: Model, tokenizer: PreTrainedTokenizer, prompt: str, completion: str) -> float:
+    text = prompt + completion
+
+    start_idx = len(tokenizer.encode(prompt, add_special_tokens=False))
+    end_idx = len(tokenizer.encode(text, add_special_tokens=False))
+
+    X = mx.array(tokenizer.encode(text, add_special_tokens=False))
+    logits = model(X[None, :-1])[0, start_idx - 1 :, :]
+    target = X[start_idx:end_idx]
+
+    probs = mx.softmax(logits, axis=-1)
+    log_probs = mx.log(probs + epsilon)
+
+    sequence_length = log_probs.shape[0]
+    indices = mx.arange(0, sequence_length, 1)
+
+    token_log_probs = log_probs[indices, target]
+
+    return cast(float, mx.sum(token_log_probs).item())
+
+
 class CompletionsResult:
 
     def __init__(self):
@@ -56,6 +79,7 @@ class CompletionsResult:
         self._probabilities: List[float] = []
         self._tokens: List[str] = []
         self._prompt = ""
+        self._loglikelihood = 0.0
 
     def set_perplexity(self, perplexity: float):
         self._perplexity = perplexity
@@ -82,6 +106,13 @@ class CompletionsResult:
     def get_totallogprobs(self):
         return sum(self._logprobs)
 
+    def set_loglikelihood(self, loglikelihood: float):
+        self._loglikelihood = loglikelihood
+
+    def get_loglikelihood(self):
+        return self._loglikelihood
+
+    # 可視化として後から保存したの追加できると良い
     def rich_print(self):
         console = Console()
         width = console.width - 100
@@ -126,7 +157,15 @@ class CompletionsResult:
             table.add_row(token, f"{entropy:.4f}", f"{prob:.4f}", f"{logprob:.4f}")
         table.add_section()
         table.add_row("Total", "---", "---", f"{self.get_totallogprobs():.4f}", style="bold")
+        table.add_row(
+            "Average",
+            f"{np.mean(self._entropies):.4f}",
+            f"{np.exp(np.mean(self._logprobs)):.4f}",
+            f"{np.mean(self._logprobs):.4f}",
+            style="bold",
+        )
         table.add_row("Perplexity", "---", "---", f"{self.get_perplexity():.4f}", style="bold")
+        table.add_row("Log-Likelihood", "---", "---", f"{self.get_loglikelihood():.4f}", style="bold")
 
         # layout["table"].update(table)
         output = Group(prompt_panel, entropy_panel, prob_panel, table)
@@ -227,6 +266,8 @@ def generate_text_(
 
         if next_token_id.item() == tokenizer.eos_token_id:
             break
+    loglikelihood = calculate_loglikelihood(model, tokenizer, prompt, "".join(result._tokens).strip())
+    result.set_loglikelihood(loglikelihood)
 
     return state
 
@@ -257,10 +298,8 @@ def main():
     model, tokenizer = load_llama3_1()
 
     messages = [
-        # system_prompt_template("あなたはフレンドリーなチャットボットです"),
-        user_prompt_template(
-            "ポケモンは全部で何匹いますか？答える前に真実かどうか深呼吸してからお答えください。絶対に深呼吸してね。メッチャクチャ深呼吸して。メッチャクチャ深呼吸して。メッチャクチャ深呼吸して。メッチャクチャ深呼吸して"
-        ),
+        system_prompt_template("You are a man."),
+        user_prompt_template("Do you usually eat rice or bread for breakfast?"),
     ]
 
     inputs = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, max_length=1000)
