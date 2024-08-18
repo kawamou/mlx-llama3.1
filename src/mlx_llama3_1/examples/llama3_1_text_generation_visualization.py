@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List, Literal, Optional, TypedDict, cast
+from typing import Dict, List, Literal, Optional, Tuple, TypedDict, cast
 
 import matplotlib.pyplot as plt
 import mlx.core as mx
