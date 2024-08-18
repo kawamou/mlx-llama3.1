@@ -291,8 +291,11 @@ def process_generation(
     return state
 
 
-# 愚直に計算しているのでかなり遅いがgenerated_textを返すことは検証済み
-def generate_text(model: Model, tokenizer: PreTrainedTokenizer, prompt: str, max_length=1000):
+@with_spinner("Generating text...")
+def generate_text(model: CachingModel, tokenizer: PreTrainedTokenizer, prompt: str, max_length=1000):
+    """
+    CachingModelを受け入れシンプルにテキスト生成を行う関数
+    """
     input_ids = tokenizer.encode(prompt, return_tensors="np")
     input_ids = mx.array(input_ids)
 
