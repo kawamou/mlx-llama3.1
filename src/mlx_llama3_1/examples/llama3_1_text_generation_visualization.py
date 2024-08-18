@@ -15,6 +15,7 @@ from rich.text import Text
 from transformers import PreTrainedTokenizer
 from transformers.utils.generic import TensorType
 
+from src.mlx_llama3_1.caching_model import CachingModel
 from src.mlx_llama3_1.llama3_1 import load_llama3_1
 from src.mlx_llama3_1.rich import rich_print, with_spinner
 
@@ -48,48 +49,6 @@ def get_next_token_logits(logits: mx.array) -> mx.array:
 def get_context_logits(logits: mx.array) -> mx.array:
     """バッチの最初の要素からこれまでに与えたトークン（語彙全体）に対する予測を取得"""
     return logits[0, :-1, :]
-
-
-type Cache = Dict[str, mx.array]
-
-
-class CachingModel:
-    def __init__(self, model: Model):
-        self._model = model
-        self._cache: Cache = {}
-
-    def __call__(self, input_ids: mx.array) -> mx.array:
-        input_ids_str = ",".join(map(str, cast(List, input_ids.tolist())[0]))
-        key_ = hashlib.sha256(input_ids_str.encode())
-        key = key_.hexdigest()
-        if key not in self._cache:  # TODO キャッシュは後から計算するためなので正確にはこのif文は不要
-            logits = self._model(input_ids)
-            self._cache[key] = logits
-        return self._cache[key]
-
-    def clear(self):
-        self._cache = {}
-
-
-def calculate_loglikelihood(model: CachingModel, tokenizer: PreTrainedTokenizer, prompt: str, completion: str) -> float:
-    text = prompt + completion
-
-    start_idx = len(tokenizer.encode(prompt, add_special_tokens=False))
-    end_idx = len(tokenizer.encode(text, add_special_tokens=False))
-
-    X = mx.array(tokenizer.encode(text, add_special_tokens=False))
-    logits = model(X[None, :-1])[0, start_idx - 1 :, :]
-    target = X[start_idx:end_idx]
-
-    probs = mx.softmax(logits, axis=-1)
-    log_probs = mx.log(probs + epsilon)
-
-    sequence_length = log_probs.shape[0]
-    indices = mx.arange(0, sequence_length, 1)
-
-    token_log_probs = log_probs[indices, target]
-
-    return cast(float, mx.sum(token_log_probs).item())
 
 
 class CompletionsResult:
@@ -186,16 +145,12 @@ class CompletionsResult:
             style="bold",
         )
         table.add_row("Perplexity", "---", "---", f"{self.get_perplexity():.4f}", style="bold")
-        table.add_row("Log-Likelihood", "---", "---", f"{self.get_loglikelihood():.4f}", style="bold")
 
         # layout["table"].update(table)
         output = Group(prompt_panel, entropy_panel, prob_panel, table)
 
         # 出力
         console.print(Padding(output, (1, 1, 1, 1)))
-
-
-result = CompletionsResult()
 
 
 class MultiByteBuffer:
@@ -229,8 +184,9 @@ def process_generation(
     model: CachingModel,
     tokenizer: PreTrainedTokenizer,
     prompt: str,
-):
+) -> CompletionsResult:
     input_ids = mx.array(tokenizer.encode(prompt, return_tensors=TensorType("mlx")))
+    result = CompletionsResult()
 
     input_ids_shape: tuple[int, int] = input_ids.shape
     _, inputs_seq_len = input_ids_shape
@@ -285,10 +241,7 @@ def process_generation(
         if next_token_id.item() == tokenizer.eos_token_id:
             break
 
-    loglikelihood = calculate_loglikelihood(model, tokenizer, prompt, "".join(result._tokens).strip())
-    result.set_loglikelihood(loglikelihood)
-
-    return state
+    return result
 
 
 @with_spinner("Generating text...")
@@ -330,7 +283,7 @@ def main():
 
     generate_text(caching_model, tokenizer, str(inputs))
 
-    process_generation(caching_model, tokenizer, str(inputs))
+    result = process_generation(caching_model, tokenizer, str(inputs))
 
     result.rich_print()
 
