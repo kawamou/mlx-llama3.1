@@ -225,11 +225,10 @@ class MultiByteBuffer:
 
 
 @with_spinner("Generating text...")
-def generate_text_(
-    model: Model,
+def process_generation(
+    model: CachingModel,
     tokenizer: PreTrainedTokenizer,
     prompt: str,
-    max_tokens: int = 100,
 ):
     input_ids = mx.array(tokenizer.encode(prompt, return_tensors=TensorType("mlx")))
 
@@ -244,9 +243,7 @@ def generate_text_(
     _multibyte_buffer_entropy = MultiByteBuffer()
     _multibyte_buffer_probability = MultiByteBuffer()
 
-    for i in range(max_tokens):
-        logits = model(state)
-
+    for _, logits in model._cache.items():
         probs = mx.softmax(get_next_token_logits(logits), axis=-1)
         next_token_id = mx.argmax(probs, axis=-1)
 
@@ -287,6 +284,7 @@ def generate_text_(
 
         if next_token_id.item() == tokenizer.eos_token_id:
             break
+
     loglikelihood = calculate_loglikelihood(model, tokenizer, prompt, "".join(result._tokens).strip())
     result.set_loglikelihood(loglikelihood)
 
