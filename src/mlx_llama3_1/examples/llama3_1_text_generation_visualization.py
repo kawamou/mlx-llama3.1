@@ -320,13 +320,17 @@ def main():
     model, tokenizer = load_llama3_1()
 
     messages = [
-        system_prompt_template("You are a man."),
-        user_prompt_template("Do you usually eat rice or bread for breakfast?"),
+        system_prompt_template("醤油味を好む男性をロールプレイしてください。"),
+        user_prompt_template("朝食べるのが多いのは、ご飯 or パン？"),
     ]
 
     inputs = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, max_length=1000)
 
-    generate_text_(model, tokenizer, str(inputs))
+    caching_model = CachingModel(model)
+
+    generate_text(caching_model, tokenizer, str(inputs))
+
+    process_generation(caching_model, tokenizer, str(inputs))
 
     result.rich_print()
 
