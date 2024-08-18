@@ -50,8 +50,28 @@ def get_context_logits(logits: mx.array) -> mx.array:
     return logits[0, :-1, :]
 
 
-# @lru_cache(maxsize=None)
-def calculate_loglikelihood(model: Model, tokenizer: PreTrainedTokenizer, prompt: str, completion: str) -> float:
+type Cache = Dict[str, mx.array]
+
+
+class CachingModel:
+    def __init__(self, model: Model):
+        self._model = model
+        self._cache: Cache = {}
+
+    def __call__(self, input_ids: mx.array) -> mx.array:
+        input_ids_str = ",".join(map(str, cast(List, input_ids.tolist())[0]))
+        key_ = hashlib.sha256(input_ids_str.encode())
+        key = key_.hexdigest()
+        if key not in self._cache:  # TODO キャッシュは後から計算するためなので正確にはこのif文は不要
+            logits = self._model(input_ids)
+            self._cache[key] = logits
+        return self._cache[key]
+
+    def clear(self):
+        self._cache = {}
+
+
+def calculate_loglikelihood(model: CachingModel, tokenizer: PreTrainedTokenizer, prompt: str, completion: str) -> float:
     text = prompt + completion
 
     start_idx = len(tokenizer.encode(prompt, add_special_tokens=False))
