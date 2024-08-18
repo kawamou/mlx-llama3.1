@@ -1,14 +1,9 @@
-from mlx_lm.utils import generate
 from typing import cast
+
+from mlx_lm.utils import generate
+
 from src.mlx_llama3_1.llama3_1 import load_llama3_1
-
-
-def system_prompt_template(content: str) -> dict:
-    return {"role": "system", "content": content}
-
-
-def user_prompt_template(content: str) -> dict:
-    return {"role": "user", "content": content}
+from src.mlx_llama3_1.utils import system_prompt_template, user_prompt_template
 
 
 def main():
