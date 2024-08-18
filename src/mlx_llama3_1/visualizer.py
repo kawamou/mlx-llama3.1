@@ -46,6 +46,7 @@ def get_color(v: float, cmap=plt.get_cmap(), scale=1.0, min_=0.4, max_=0.8):
     return c
 
 
+# TODO _*系の直参照をなくす
 def visualize_metrics(llm_metrics: LLMMetrics):
     console = Console()
     width = console.width - 100
