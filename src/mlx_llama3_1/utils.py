@@ -2,6 +2,8 @@ import mlx.core as mx
 
 # TODO 適切なファイル名に振り分け
 
+epsilon = 1e-5  # float16の場合にlog(0)を防ぐための微小値 TODO: 今回fp16だが別の重みの場合は要検討
+
 
 def system_prompt_template(content: str) -> dict:
     return {"role": "system", "content": content}

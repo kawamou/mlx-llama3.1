@@ -6,18 +6,19 @@ from transformers.utils.generic import TensorType
 
 from src.mlx_llama3_1.caching_model import CachingModel
 from src.mlx_llama3_1.llama3_1 import load_llama3_1
-from src.mlx_llama3_1.llm_metrics import CompletionsResult
+from src.mlx_llama3_1.llm_metrics import LLMMetrics
 from src.mlx_llama3_1.utils import (
+    epsilon,
     get_next_token_logits,
     system_prompt_template,
     user_prompt_template,
 )
-from src.mlx_llama3_1.visualizer import with_spinner
-
-epsilon = 1e-5  # float16の場合にlog(0)を防ぐための微小値 TODO: 今回fp16だが別の重みの場合は要検討
+from src.mlx_llama3_1.visualizer import visualize_metrics, with_spinner
 
 
 class MultiByteBuffer:
+    """MultiByte文字をバッファリングするクラス. 平均を取って格納する"""
+
     def __init__(self):
         self._buffer: mx.array = mx.array([])
 
@@ -43,14 +44,16 @@ class MultiByteBuffer:
         return self.len() == 0
 
 
+# TODO かなり冗長なのでリファクタリングする
 @with_spinner("Generating text...")
 def text_to_llm_metrics(
     model: CachingModel,
     tokenizer: PreTrainedTokenizer,
     prompt: str,
-) -> CompletionsResult:
+) -> LLMMetrics:
+    """CachingModelに蓄えたlogitsを用いてLLMMetricsを生成する関数"""
     input_ids = mx.array(tokenizer.encode(prompt, return_tensors=TensorType("mlx")))
-    result = CompletionsResult()
+    result = LLMMetrics()
 
     input_ids_shape: tuple[int, int] = input_ids.shape
     _, inputs_seq_len = input_ids_shape
@@ -58,10 +61,10 @@ def text_to_llm_metrics(
     state = input_ids
 
     result.set_prompt(prompt)
-    _decoded_prev = ""
-    _multibyte_buffer_logprobs = MultiByteBuffer()
-    _multibyte_buffer_entropy = MultiByteBuffer()
-    _multibyte_buffer_probability = MultiByteBuffer()
+    decoded_prev = ""
+    multibyte_buffer_logprobs = MultiByteBuffer()
+    multibyte_buffer_entropy = MultiByteBuffer()
+    multibyte_buffer_probability = MultiByteBuffer()
 
     for _, logits in model._cache.items():
         probs = mx.softmax(get_next_token_logits(logits), axis=-1)
@@ -69,38 +72,38 @@ def text_to_llm_metrics(
 
         state = mx.concatenate([state, next_token_id.reshape(1, 1)], axis=1)
 
-        _v_logprobs = cast(float, mx.log(probs[next_token_id] + epsilon).item())
-        _v_entropy = -mx.sum(probs * mx.log(probs + epsilon), axis=-1)
-        _v_entropy = cast(float, _v_entropy.item())
-        _v_probability = cast(float, probs[next_token_id].item())
+        logprobs = cast(float, mx.log(probs[next_token_id] + epsilon).item())
+        entropy = -mx.sum(probs * mx.log(probs + epsilon), axis=-1)
+        entropy = cast(float, entropy.item())
+        probability = cast(float, probs[next_token_id].item())
 
         completion = state[0, inputs_seq_len:]
-        _decoded = tokenizer.decode(completion.tolist())
-        token = _decoded[len(_decoded_prev) :]
+        decoded = tokenizer.decode(completion.tolist())
+        token = decoded[len(decoded_prev) :]
 
         if MultiByteBuffer.is_multibyte_token(token):
-            _multibyte_buffer_logprobs.append(cast(float, _v_logprobs))
-            _multibyte_buffer_entropy.append(cast(float, _v_entropy))
-            _multibyte_buffer_probability.append(cast(float, _v_probability))
+            multibyte_buffer_logprobs.append(cast(float, logprobs))
+            multibyte_buffer_entropy.append(cast(float, entropy))
+            multibyte_buffer_probability.append(cast(float, probability))
 
         else:
-            if not _multibyte_buffer_logprobs.is_empty():
-                _multibyte_buffer_logprobs.append(cast(float, _v_logprobs))
-                _v_logprobs = _multibyte_buffer_logprobs.mean()
-            if not _multibyte_buffer_entropy.is_empty():
-                _multibyte_buffer_entropy.append(cast(float, _v_entropy))
-                _v_entropy = _multibyte_buffer_entropy.mean()
-            if not _multibyte_buffer_probability.is_empty():
-                _multibyte_buffer_probability.append(cast(float, _v_probability))
-                _v_probability = _multibyte_buffer_probability.mean()
-            _decoded_prev = _decoded
-            _multibyte_buffer_logprobs.clear()
-            _multibyte_buffer_entropy.clear()
-            _multibyte_buffer_probability.clear()
-            result.append_logprobs(_v_logprobs)
+            if not multibyte_buffer_logprobs.is_empty():
+                multibyte_buffer_logprobs.append(cast(float, logprobs))
+                logprobs = multibyte_buffer_logprobs.mean()
+            if not multibyte_buffer_entropy.is_empty():
+                multibyte_buffer_entropy.append(cast(float, entropy))
+                entropy = multibyte_buffer_entropy.mean()
+            if not multibyte_buffer_probability.is_empty():
+                multibyte_buffer_probability.append(cast(float, probability))
+                probability = multibyte_buffer_probability.mean()
+            decoded_prev = decoded
+            multibyte_buffer_logprobs.clear()
+            multibyte_buffer_entropy.clear()
+            multibyte_buffer_probability.clear()
+            result.append_logprobs(logprobs)
             result.append_token(token)
-            result.append_entropy(_v_entropy)
-            result.append_probability(_v_probability)
+            result.append_entropy(entropy)
+            result.append_probability(probability)
 
         if next_token_id.item() == tokenizer.eos_token_id:
             break
@@ -149,7 +152,7 @@ def main():
 
     result = text_to_llm_metrics(caching_model, tokenizer, str(inputs))
 
-    result.rich_print()
+    visualize_metrics(result)
 
 
 if __name__ == "__main__":

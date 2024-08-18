@@ -8,6 +8,8 @@ type Cache = Dict[str, mx.array]
 
 
 class CachingModel:
+    """LLMの出力logitsを全て記憶しておくクラス"""
+
     def __init__(self, model: Model):
         self._model = model
         self._cache: Cache = {}
