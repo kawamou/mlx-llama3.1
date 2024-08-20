@@ -49,7 +49,7 @@ def get_color(v: float, cmap=plt.get_cmap(), scale=1.0, min_=0.4, max_=0.8):
 # TODO _*系の直参照をなくす
 def visualize_metrics(llm_metrics: LLMMetrics):
     console = Console()
-    width = console.width - 100
+    width = console.width - 70
 
     # プロンプトセクション
     prompt_panel = Panel(
@@ -88,7 +88,7 @@ def visualize_metrics(llm_metrics: LLMMetrics):
     ):
         table.add_row(token, f"{entropy:.4f}", f"{prob:.4f}", f"{logprob:.4f}")
     table.add_section()
-    table.add_row("Total", "---", "---", f"{llm_metrics.get_totallogprobs():.4f}", style="bold")
+    table.add_row("Total(Log Likelihood)", "---", "---", f"{llm_metrics.get_totallogprobs():.4f}", style="bold")
     table.add_row(
         "Average",
         f"{np.mean(llm_metrics._entropies):.4f}",
